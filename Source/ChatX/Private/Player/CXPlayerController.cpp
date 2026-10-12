@@ -2,6 +2,17 @@
 
 #include"UI/CXChatInput.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "ChatX/ChatX.h"
+#include "EngineUtils.h"
+#include "Kismet/GameplayStatics.h"
+#include "Game/CXGameModeBase.h"
+#include "Player/CXPlayerState.h"
+#include "Net/UnrealNetwork.h"
+
+ACXPlayerController::ACXPlayerController()
+{
+  bReplicates = true;
+}
 
 void ACXPlayerController::BeginPlay()
 {
@@ -23,16 +34,59 @@ void ACXPlayerController::BeginPlay()
       ChatInputWidgetInstance->AddToViewport();
     }
   }
+
+  if (IsValid(NotificationTextWidgetClass) == true)
+  {
+    NotificationTextWidgetInstance = CreateWidget<UUserWidget>(this, NotificationTextWidgetClass);
+    if (IsValid(NotificationTextWidgetInstance) == true)
+    {
+      NotificationTextWidgetInstance->AddToViewport();
+    }
+  }
 }
 
 void ACXPlayerController::SetChatMessageString(const FString& InChatMessageString)
 {
   ChatMessageString = InChatMessageString;
 
-  PrintChatMessageString(ChatMessageString);
+  if (IsLocalController() == true)
+  {
+    ACXPlayerState* CXPS = GetPlayerState<ACXPlayerState>();
+    if (IsValid(CXPS) == true)
+    {
+      ServerRPCPrintChatMessageString(InChatMessageString);
+    }
+  }
 }
 
 void ACXPlayerController::PrintChatMessageString(const FString& InChatMessageString)
 {
-  UKismetSystemLibrary::PrintString(this, ChatMessageString, true, true, FLinearColor::Red, 5.0f);
+  FString NetModeString = ChatXFunctionLibrary::GetNetModeString(this);
+  FString CombinedMessageString = FString::Printf(TEXT("%s: %s"), *NetModeString, *InChatMessageString);
+  ChatXFunctionLibrary::MyPrintString(this, CombinedMessageString, 10.f);
+}
+
+void ACXPlayerController::ClientRPCPrintChatMessageString_Implementation(const FString& InChatMessageString)
+{
+  PrintChatMessageString(InChatMessageString);
+}
+
+void ACXPlayerController::ServerRPCPrintChatMessageString_Implementation(const FString& InChatMessageString)
+{
+  AGameModeBase* GM = UGameplayStatics::GetGameMode(this);
+  if (IsValid(GM) == true)
+  {
+    ACXGameModeBase* CXGM = Cast<ACXGameModeBase>(GM);
+    if (IsValid(CXGM) == true)
+    {
+      CXGM->PrintChatMessageString(this, InChatMessageString);
+    }
+  }
+}
+
+void ACXPlayerController::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+  Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+  DOREPLIFETIME(ThisClass, NotificationText);
 }
